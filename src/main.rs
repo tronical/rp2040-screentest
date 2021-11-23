@@ -92,9 +92,9 @@ fn main() -> ! {
     let mut led_pin = pins.led.into_push_pull_output();
 
     // These are implicitly used by the spi driver if they are in the correct mode
-    let _spi_sclk = pins.gpio6.into_mode::<hal::gpio::FunctionSpi>();
-    let _spi_mosi = pins.gpio7.into_mode::<hal::gpio::FunctionSpi>();
-    let _spi_miso = pins.gpio4.into_mode::<hal::gpio::FunctionSpi>();
+    let _spi_sclk = pins.gpio10.into_mode::<hal::gpio::FunctionSpi>();
+    let _spi_mosi = pins.gpio11.into_mode::<hal::gpio::FunctionSpi>();
+    let _spi_miso = pins.gpio12.into_mode::<hal::gpio::FunctionSpi>();
 
     let spi = hal::spi::Spi::<_, _, 8>::new(pac.SPI1);
 
@@ -107,21 +107,34 @@ fn main() -> ! {
 
     let rst = pins.gpio15.into_push_pull_output();
 
-    //let di = display_interface_spi::SPIInterface::new(spi, pins.gpio8.into_push_pull_output(), pins.gpio9.into_push_pull_output());
-
     let dc = pins.gpio8.into_push_pull_output();
-    let di = display_interface_spi::SPIInterfaceNoCS::new(spi, dc);
+    let cs = pins.gpio9.into_push_pull_output();
+    let di = display_interface_spi::SPIInterface::new(spi, dc, cs);
 
     let mut display = st7789::ST7789::new(di, rst, 240, 320);
 
+    {
+        let mut bl = pins.gpio13.into_push_pull_output();
+        bl.set_low().unwrap();
+        delay.delay_us(10_000);
+        bl.set_high().unwrap();
+    }
+
     display.init(&mut delay).unwrap();
-    display.set_orientation(st7789::Orientation::Landscape).unwrap();
-    display.clear(embedded_graphics::pixelcolor::Rgb565::WHITE).unwrap();
+    display
+        .set_orientation(st7789::Orientation::Landscape)
+        .unwrap();
 
     // Blink the LED at 1 Hz
     loop {
+        display
+            .clear(embedded_graphics::pixelcolor::Rgb565::GREEN)
+            .unwrap();
         led_pin.set_high().unwrap();
         delay.delay_ms(500);
+        display
+            .clear(embedded_graphics::pixelcolor::Rgb565::BLUE)
+            .unwrap();
         led_pin.set_low().unwrap();
         delay.delay_ms(500);
     }
