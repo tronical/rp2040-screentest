@@ -9,6 +9,7 @@
 
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
 
 // The macro for our start-up function
 use cortex_m_rt::entry;
@@ -34,13 +35,22 @@ use pico::hal::pac;
 // higher-level drivers.
 use pico::hal;
 
-use embedded_graphics::prelude::*;
-
 //// The linker will place this boot block at the start of our program image. We
 //// need this to help the ROM bootloader get our code up and running.
 #[link_section = ".boot2"]
 #[used]
 pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
+
+sixtyfps::include_modules!();
+
+#[alloc_error_handler]
+fn oom(_: core::alloc::Layout) -> ! {
+    loop {}
+}
+use alloc_cortex_m::CortexMHeap;
+
+#[global_allocator]
+static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
 
 /// Entry point to our bare-metal application.
 ///
@@ -98,7 +108,7 @@ fn main() -> ! {
 
     let spi = hal::spi::Spi::<_, _, 8>::new(pac.SPI1);
 
-    let mut spi = spi.init(
+    let spi = spi.init(
         &mut pac.RESETS,
         clocks.peripheral_clock.freq(),
         4_000_000u32.Hz(),
@@ -111,7 +121,7 @@ fn main() -> ! {
     let cs = pins.gpio9.into_push_pull_output();
     let di = display_interface_spi::SPIInterface::new(spi, dc, cs);
 
-    let mut display = st7789::ST7789::new(di, rst, 240, 320);
+    let mut display = st7789::ST7789::new(di, rst, 320, 240);
 
     {
         let mut bl = pins.gpio13.into_push_pull_output();
@@ -120,21 +130,34 @@ fn main() -> ! {
         bl.set_high().unwrap();
     }
 
+    let start = cortex_m_rt::heap_start() as usize;
+    let size = 1024 * 120; // in bytes
+    unsafe { ALLOCATOR.init(start, size) }
+
     display.init(&mut delay).unwrap();
     display
         .set_orientation(st7789::Orientation::Landscape)
         .unwrap();
 
+    sixtyfps_rendering_backend_mcu::init_with_display(display);
+
+    let app = App::new();
+    app.show();
+
     // Blink the LED at 1 Hz
     loop {
+        /*
         display
             .clear(embedded_graphics::pixelcolor::Rgb565::GREEN)
             .unwrap();
+            */
         led_pin.set_high().unwrap();
         delay.delay_ms(500);
+        /*
         display
             .clear(embedded_graphics::pixelcolor::Rgb565::BLUE)
             .unwrap();
+            */
         led_pin.set_low().unwrap();
         delay.delay_ms(500);
     }
