@@ -35,12 +35,15 @@ use pico::hal::pac;
 use pico::hal;
 
 use embedded_graphics::prelude::*;
+use pico::hal::timer::Timer;
 
 //// The linker will place this boot block at the start of our program image. We
 //// need this to help the ROM bootloader get our code up and running.
 #[link_section = ".boot2"]
 #[used]
 pub static BOOT2: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
+
+use defmt_rtt as _;
 
 /// Entry point to our bare-metal application.
 ///
@@ -89,7 +92,7 @@ fn main() -> ! {
     );
 
     // Set the LED to be an output
-    let mut led_pin = pins.led.into_push_pull_output();
+    //let mut led_pin = pins.led.into_push_pull_output();
 
     // These are implicitly used by the spi driver if they are in the correct mode
     let _spi_sclk = pins.gpio10.into_mode::<hal::gpio::FunctionSpi>();
@@ -98,18 +101,18 @@ fn main() -> ! {
 
     let spi = hal::spi::Spi::<_, _, 8>::new(pac.SPI1);
 
-    let mut spi = spi.init(
+    let spi = spi.init(
         &mut pac.RESETS,
         clocks.peripheral_clock.freq(),
-        4_000_000u32.Hz(),
+        clocks.system_clock.freq().integer().Hz(),
         &embedded_hal::spi::MODE_3,
     );
 
     let rst = pins.gpio15.into_push_pull_output();
 
     let dc = pins.gpio8.into_push_pull_output();
-    let cs = pins.gpio9.into_push_pull_output();
-    let di = display_interface_spi::SPIInterface::new(spi, dc, cs);
+    //let cs = pins.gpio9.into_push_pull_output();
+    let di = display_interface_spi::SPIInterfaceNoCS::new(spi, dc);
 
     let mut display = st7789::ST7789::new(di, rst, 240, 320);
 
@@ -125,18 +128,27 @@ fn main() -> ! {
         .set_orientation(st7789::Orientation::Landscape)
         .unwrap();
 
-    // Blink the LED at 1 Hz
+    let timer = Timer::new(pac.TIMER, &mut pac.RESETS);
+    let mut last_duration = core::time::Duration::from_micros(timer.get_counter());
+
     loop {
         display
             .clear(embedded_graphics::pixelcolor::Rgb565::GREEN)
             .unwrap();
-        led_pin.set_high().unwrap();
-        delay.delay_ms(500);
+        let duration = core::time::Duration::from_micros(timer.get_counter());
+        defmt::info!("{}ms", duration.saturating_sub(last_duration).as_millis());
+        last_duration = duration;
+
+        //led_pin.set_high().unwrap();
+        //delay.delay_ms(500);
         display
             .clear(embedded_graphics::pixelcolor::Rgb565::BLUE)
             .unwrap();
-        led_pin.set_low().unwrap();
-        delay.delay_ms(500);
+        //led_pin.set_low().unwrap();
+        //delay.delay_ms(500);
+        let duration = core::time::Duration::from_micros(timer.get_counter());
+        defmt::info!("{}ms", duration.saturating_sub(last_duration).as_millis());
+        last_duration = duration;
     }
 }
 
